@@ -64,10 +64,18 @@
 - Added tests for mapping-level detector selection and default active-detector fallback.
 - Re-ran `cargo fmt`, `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully after per-mapping detector changes.
 - Copied the rebuilt DLL and updated TOML to `F:\GoldenAge\dll\Test_Wp`.
+- User created GitHub repository `KamiyamaShiki0704/ERAnimSwap` and asked to upload the project.
+- Wrote the GitHub upload plan to `PLANS.md`.
+- Added `.gitignore` to exclude `target/`, generated binaries, logs, and local `weapon_animation_hotreload.toml`.
+- Added a README build note explaining the local `fromsoftware-rs-0.14.0` path dependency layout.
+- Initialized this project folder as a standalone git repository on branch `main`.
+- Committed the initial project state as `e467ab4 Initial ERAnimSwap project`.
+- Pushed `main` to `git@github.com:KamiyamaShiki0704/ERAnimSwap.git` using `C:\Users\33333\.ssh\id_ed25519_github`.
 
 ## Changed Files
 - `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\Cargo.lock`
 - `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\Cargo.toml`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\.gitignore`
 - `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\README.md`
 - `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\TASK_STATUS.md`
 - `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\PLANS.md`
@@ -87,6 +95,8 @@
 - The user's latest validation confirms the live player reload works when the DLL requests both supplemental `c0000_dlc01` and base `c0000`.
 - Hot reload timing now defaults to delayed application (`reload_delay_frames = 45`, `stable_frames_required = 8`, `copy_before_delay = false`) to avoid interrupting the player's weapon-switch animation.
 - Detection can now be configured through named detector profiles and selected per mapping. Existing configs with only top-level `detect_field` remain valid.
+- GitHub repository is initialized and `main` is pushed to `KamiyamaShiki0704/ERAnimSwap`.
+- The public repository intentionally excludes local runtime config `weapon_animation_hotreload.toml`; `weapon_animation_hotreload.example.toml` is the committed template.
 
 ## Unresolved Issues
 - Runtime validation in game is still required.
@@ -95,6 +105,7 @@
 - Updated hot reload offsets and pointer checks still need in-game validation.
 - In-game validation is required to confirm whether the default 45-frame delay avoids replaying the weapon-switch animation without feeling too late.
 - In-game validation is required for per-mapping detector profiles, especially if two mappings from different detectors can match at the same time; TOML order determines priority.
+- Standalone GitHub clones need the `fromsoftware-rs-0.14.0` crates at the relative path expected by `Cargo.toml`, or the dependency paths must be adjusted.
 
 ## Next Step
-- Test with the rebuilt DLL and TOML. Use `detector = "name"` inside each `[[mappings]]` entry when that mapping should be driven by a specific detector.
+- Optionally improve standalone build portability by vendoring or changing the `fromsoftware-rs-0.14.0` dependencies from local paths to a public git dependency if an appropriate upstream source is available.
