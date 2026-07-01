@@ -1,0 +1,100 @@
+# TASK_STATUS
+
+## Completed
+- Read repository-level `AGENTS.md`, `TASK_STATUS.md`, and `PLANS.md`.
+- Created this project workspace under `_Project/weapon-animation-hotreload`.
+- Inspected existing Rust DLL examples and confirmed `CSTaskImp::run_recurring` is the local pattern.
+- Inspected DSAnimStudio live refresh implementation for Elden Ring/Nightreign character reload.
+- Wrote implementation plan to `PLANS.md`.
+- Implemented a Rust `cdylib` DLL project.
+- Implemented config-driven weapon detection using `WorldChrMan`, `ChrAsm`, `SoloParamRepository`, and `EQUIP_PARAM_WEAPON_ST`.
+- Implemented mapped animation archive copy from `chr/ExtraAnimation` to the configured active archive.
+- Implemented DSAnimStudio-style character hot reload queue request with configurable offsets and crash patch AOB.
+- Added logging, example TOML config, README, and unit tests.
+- Ran `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully.
+- Improved automatic path detection so external mod folders do not need fixed absolute paths.
+- Re-ran `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully after auto path detection changes.
+- Investigated an in-game crash during hot reload and compared against `F:\GoldenAge\fromsoftware-rs\_Example\Elden-Ring-HKS-Hotloader-master`.
+- Updated default hot reload offsets to HKS Hotloader's newer Elden Ring layout and added automatic migration for old template offsets.
+- Added pointer plausibility checks before writing the reload queue.
+- Re-ran `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully after hot reload crash fix.
+- User clarified the intended detection field is Special Motion Category / `spAtkcategory`; implementation is being updated to expose `sp_atkcategory`.
+- Added `sp_atkcategory` detection field, unmapped-ID logging, copy target-size logging, and a TOML parse test for `sp_atkcategory`.
+- Re-ran `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully after `sp_atkcategory` update.
+- Read the latest runtime log from `F:\GoldenAge\dll\Test_Wp\weapon_animation_hotreload.log`; detection and file replacement succeeded, but only `c0000_dlc01` was queued for hot reload.
+- Compared HkbEditor/HKS Hotloader reload reference; it reloads player character through `c0000`, while DSAnimStudio also treats `c0000` as the broad player-character reload name that includes DLC supplemental animation archives.
+- Wrote the supplemental character reload-name plan to `PLANS.md`.
+- Implemented configurable multi-name hot reload requests:
+  - existing `character_reload_name` remains supported;
+  - optional `reload_names = [...]` can explicitly request multiple names;
+  - `also_reload_base_character = true` now defaults supplemental names like `c0000_dlc01` to also request `c0000`.
+- Updated the example TOML and README for the new reload-name behavior.
+- Added unit tests for supplemental reload-name expansion and explicit reload-name de-duplication.
+- Re-ran `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully.
+- Copied the rebuilt DLL to `F:\GoldenAge\dll\Test_Wp\weapon_animation_hotreload.dll` for the user's current test setup.
+- User confirmed hot reload now succeeds after requesting both `c0000_dlc01` and `c0000`.
+- Wrote the delayed stable reload plan to `PLANS.md`.
+- Implemented configurable delayed/stable reload timing:
+  - `reload_delay_frames` waits after a newly mapped ID is detected;
+  - `stable_frames_required` requires the same mapped ID to remain detected;
+  - `copy_before_delay` optionally copies immediately while delaying hot reload, default false.
+- Added pending-ID runtime state so weapon changes are only copied/reloaded after the ID remains stable.
+- Updated example TOML and README with the delay/stability settings.
+- Re-ran `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully after delayed reload changes.
+- Copied the rebuilt delayed-reload DLL to `F:\GoldenAge\dll\Test_Wp\weapon_animation_hotreload.dll`.
+- User asked whether multiple detection fields can be defined and then selected from config.
+- Wrote the named detector profiles plan to `PLANS.md`.
+- Implemented named detector profiles:
+  - legacy top-level `detect_field` and `hand` still work when no detector profiles are configured;
+  - `active_detector = "name"` selects a profile from repeated `[[detectors]]` entries;
+  - each detector has `name`, `detect_field`, and optional `hand`;
+  - if `active_detector` is missing, the first detector is used;
+  - if `active_detector` is invalid, the DLL logs the mismatch and falls back to the first detector.
+- Updated example TOML and README with named detector profile usage.
+- Added tests for legacy detector behavior, selected detector behavior, and invalid-name fallback.
+- Re-ran `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully after detector profile changes.
+- Recreated missing `F:\GoldenAge\dll\Test_Wp` directory and copied the rebuilt DLL to `F:\GoldenAge\dll\Test_Wp\weapon_animation_hotreload.dll`.
+- User clarified the desired behavior is per-mapping detector selection rather than only one globally active detector.
+- Wrote the per-mapping detector plan to `PLANS.md`.
+- Implemented optional `detector = "name"` inside each `[[mappings]]` entry.
+- Changed runtime matching so mappings are evaluated in TOML order; each mapping reads its own detector output, and the first matching `(detector, id)` is applied.
+- Changed last-applied/pending state tracking from only `id` to `(detector, id)` to avoid collisions across detectors.
+- Kept backward compatibility: mappings without `detector` use `active_detector`, and configs without detectors use top-level `detect_field`/`hand`.
+- Updated README, example TOML, and the project TOML with per-mapping detector usage.
+- Added tests for mapping-level detector selection and default active-detector fallback.
+- Re-ran `cargo fmt`, `cargo fmt --check`, `cargo test`, and `cargo build --release` successfully after per-mapping detector changes.
+- Copied the rebuilt DLL and updated TOML to `F:\GoldenAge\dll\Test_Wp`.
+
+## Changed Files
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\Cargo.lock`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\Cargo.toml`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\README.md`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\TASK_STATUS.md`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\PLANS.md`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\src\lib.rs`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\src\log.rs`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\weapon_animation_hotreload.toml`
+- `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\weapon_animation_hotreload.example.toml`
+- `F:\GoldenAge\dll\Test_Wp\weapon_animation_hotreload.dll`
+- `F:\GoldenAge\dll\Test_Wp\weapon_animation_hotreload.toml`
+
+## Current Judgment
+- Goal: build a DLL that detects the player's current weapon special mod ID, maps selected IDs to custom animation archive variants, copies the chosen source from `chr/ExtraAnimation` over the active animation archive such as `mod/chr/c0000_dlc01.anibnd.dcx`, and triggers/assists hot reload.
+- Implemented and builds successfully. The release DLL is at `F:\GoldenAge\fromsoftware-rs\_Project\weapon-animation-hotreload\target\release\weapon_animation_hotreload.dll`.
+- Detection should use `sp_atkcategory` for the user's intended Special Motion Category workflow. The config also supports other fields such as weapon param ID, `wep_type`, resident SpEffect IDs, or sword art param ID.
+- Auto path detection now searches near the DLL and game exe for any `chr` directory containing mapped source files; the parent folder name can be arbitrary.
+- HKS Hotloader uses newer Elden Ring reload offsets `0x1E668 / 0x1E670 / 0x1E678`; the previous default `0x1E660 / 0x1E668 / 0x1E670` likely caused the hot reload crash.
+- The user's latest validation confirms the live player reload works when the DLL requests both supplemental `c0000_dlc01` and base `c0000`.
+- Hot reload timing now defaults to delayed application (`reload_delay_frames = 45`, `stable_frames_required = 8`, `copy_before_delay = false`) to avoid interrupting the player's weapon-switch animation.
+- Detection can now be configured through named detector profiles and selected per mapping. Existing configs with only top-level `detect_field` remain valid.
+
+## Unresolved Issues
+- Runtime validation in game is still required.
+- Hot reload offsets/crash patch AOB may vary by game version; they are configurable in TOML.
+- The DSAnimStudio-style reload queue node is intentionally leaked after insertion, matching the practical behavior of DSAnimStudio's remote allocation path. This is tiny per applied mapping but should be revisited if swaps happen extremely often.
+- Updated hot reload offsets and pointer checks still need in-game validation.
+- In-game validation is required to confirm whether the default 45-frame delay avoids replaying the weapon-switch animation without feeling too late.
+- In-game validation is required for per-mapping detector profiles, especially if two mappings from different detectors can match at the same time; TOML order determines priority.
+
+## Next Step
+- Test with the rebuilt DLL and TOML. Use `detector = "name"` inside each `[[mappings]]` entry when that mapping should be driven by a specific detector.

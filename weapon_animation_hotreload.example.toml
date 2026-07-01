@@ -1,0 +1,91 @@
+# Path auto-detection is enabled by default.
+# The DLL searches near its own folder and near the game folder for a chr directory
+# containing one of the mapped source files. Directory names such as GA/mod/etc.
+# do not need to be hard-coded.
+enabled = true
+auto_detect_paths = true
+game_root = "."
+
+# These are still used as hints. Auto-detection will also try plain chr if
+# chr/ExtraAnimation does not contain the mapped files.
+source_dir = "chr/ExtraAnimation"
+target_archive = "mod/chr/c0000_dlc01.anibnd.dcx"
+character_reload_name = "c0000_dlc01"
+
+# For supplemental player archives such as c0000_dlc01, the game may need the
+# broad player character reload name c0000 as well. This is enabled by default.
+also_reload_base_character = true
+
+# Optional explicit override. If this list is non-empty, it replaces
+# character_reload_name as the set of requested reload names.
+# reload_names = ["c0000_dlc01", "c0000"]
+
+# hand: "auto", "right", or "left"
+hand = "auto"
+
+# Common choices:
+# active_wepmotion_id, wepmotion_one_hand_id, wepmotion_both_hand_id,
+# wepmotion_category, sp_atkcategory, weapon_param_id, base_weapon_param_id, wep_type,
+# resident_sp_effect_id, resident_sp_effect_id1, resident_sp_effect_id2,
+# sword_arts_param_id
+detect_field = "sp_atkcategory"
+
+# Optional named detector profiles. The global detect_field/hand above remain
+# as the legacy fallback when no detectors are configured.
+# active_detector is the default detector for mappings that do not set
+# detector = "...".
+active_detector = "special_motion"
+
+[[detectors]]
+name = "special_motion"
+detect_field = "sp_atkcategory"
+hand = "auto"
+
+[[detectors]]
+name = "weapon_param"
+detect_field = "base_weapon_param_id"
+hand = "right"
+
+[[detectors]]
+name = "right_weapon_type"
+detect_field = "wep_type"
+hand = "right"
+
+poll_every_frames = 6
+
+# Delay applying a newly detected mapped ID so hot reload does not interrupt
+# the player's weapon-switch animation. Values are counted in approximate
+# game frames, not polling ticks.
+reload_delay_frames = 45
+stable_frames_required = 8
+
+# false: wait, then copy + hot reload. This is safest for weapon switching.
+# true: copy immediately, but still delay hot reload.
+copy_before_delay = false
+
+copy_enabled = true
+hot_reload_enabled = true
+
+# DSAnimStudio-style Elden Ring/Nightreign character reload queue offsets.
+# Defaults match Elden-Ring-HKS-Hotloader's newer Elden Ring layout:
+# 0x1E668 / 0x1E670 / 0x1E678.
+reload_list_offset = 124520
+reload_count_offset = 124528
+reload_timer_offset = 124536
+reload_timer_seconds = 10.0
+
+[[mappings]]
+detector = "special_motion"
+id = 0
+file = "c0000_dlc01.anibnd_00.dcx"
+
+[[mappings]]
+detector = "special_motion"
+id = 1
+file = "c0000_dlc01.anibnd_01.dcx"
+
+# Example of mixing another detector in the same mapping table:
+# [[mappings]]
+# detector = "weapon_param"
+# id = 1000000
+# file = "c0000_dlc01.anibnd_weapon_1000000.dcx"
