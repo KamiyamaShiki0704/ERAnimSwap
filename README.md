@@ -18,3 +18,5 @@ For supplemental player animation archives such as `c0000_dlc01.anibnd.dcx`, the
 To avoid replaying the weapon-switch animation, mapped weapon changes are delayed until the detected ID has remained stable for a short time. Tune `reload_delay_frames`, `stable_frames_required`, and `copy_before_delay` in the TOML if the reload feels too early or too late.
 
 You can keep multiple detection methods in one config by defining `[[detectors]]`. A mapping can set `detector = "name"` to choose which detector produces the ID for that mapping. Mappings without `detector` use `active_detector`, and the old top-level `detect_field`/`hand` still work when no detector profiles are defined.
+
+Use `startup_delay_seconds` to wait a few seconds after DLL load before initializing game pointers and recurring tasks.

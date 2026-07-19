@@ -48,6 +48,7 @@ struct Config {
     detect_field: DetectField,
     active_detector: String,
     detectors: Vec<DetectorConfig>,
+    startup_delay_seconds: f32,
     poll_every_frames: u32,
     reload_delay_frames: u32,
     stable_frames_required: u32,
@@ -141,6 +142,7 @@ impl Default for Config {
             detect_field: DetectField::ActiveWepmotionId,
             active_detector: String::new(),
             detectors: Vec::new(),
+            startup_delay_seconds: 3.0,
             poll_every_frames: 6,
             reload_delay_frames: 45,
             stable_frames_required: 8,
@@ -220,12 +222,13 @@ fn run_task_thread(module: usize) {
 
     let config = Config::load(module);
     log::line(format_args!(
-        "config enabled={} mappings={} detect_field={:?} hand={:?} active_detector={} reload_delay_frames={} stable_frames_required={} copy_before_delay={}",
+        "config enabled={} mappings={} detect_field={:?} hand={:?} active_detector={} startup_delay_seconds={} reload_delay_frames={} stable_frames_required={} copy_before_delay={}",
         config.enabled,
         config.mappings.len(),
         config.active_detect_field(),
         config.active_hand_mode(),
         config.active_detector_name(),
+        config.startup_delay_seconds,
         config.reload_delay_frames,
         config.stable_frames_required,
         config.copy_before_delay
@@ -233,6 +236,12 @@ fn run_task_thread(module: usize) {
 
     if !config.enabled {
         log::line(format_args!("disabled by config"));
+        STARTED.store(false, Ordering::Release);
+        return;
+    }
+
+    wait_startup_delay(&config);
+    if SHUTDOWN.load(Ordering::Acquire) {
         STARTED.store(false, Ordering::Release);
         return;
     }
@@ -309,6 +318,31 @@ fn tick(config: &Config, source_dir: &Path, target_archive: &Path, state: &mut R
         matched.key,
         matched.file,
     );
+}
+
+fn wait_startup_delay(config: &Config) {
+    let delay = config.startup_delay_duration();
+    if delay.is_zero() {
+        return;
+    }
+
+    log::line(format_args!(
+        "startup delay waiting {:.3} seconds",
+        delay.as_secs_f32()
+    ));
+
+    let step = Duration::from_millis(100);
+    let mut waited = Duration::ZERO;
+    while waited < delay {
+        if SHUTDOWN.load(Ordering::Acquire) {
+            return;
+        }
+
+        let remaining = delay.saturating_sub(waited);
+        let sleep_for = remaining.min(step);
+        std::thread::sleep(sleep_for);
+        waited += sleep_for;
+    }
 }
 
 fn find_matched_mapping(config: &Config) -> Option<MatchedMapping<'_>> {
@@ -814,6 +848,14 @@ impl Config {
         self.poll_every_frames.max(1)
     }
 
+    fn startup_delay_duration(&self) -> Duration {
+        if self.startup_delay_seconds.is_finite() && self.startup_delay_seconds > 0.0 {
+            Duration::from_secs_f32(self.startup_delay_seconds)
+        } else {
+            Duration::ZERO
+        }
+    }
+
     fn legacy_detector_spec(&self) -> DetectorSpec {
         DetectorSpec {
             name: "legacy".to_string(),
@@ -1226,6 +1268,21 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.detect_field, DetectField::SpAtkcategory);
+    }
+
+    #[test]
+    fn parses_startup_delay_seconds() {
+        let config = toml::from_str::<Config>(
+            r#"
+            startup_delay_seconds = 2.5
+            [[mappings]]
+            id = 7
+            file = "c0000_dlc01.anibnd_07.dcx"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.startup_delay_duration(), Duration::from_millis(2500));
     }
 
     #[test]

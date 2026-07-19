@@ -53,6 +53,10 @@ hand = "right"
 
 poll_every_frames = 6
 
+# Wait after DLL load before initializing game pointers and recurring tasks.
+# Set to 0.0 to disable.
+startup_delay_seconds = 3.0
+
 # Delay applying a newly detected mapped ID so hot reload does not interrupt
 # the player's weapon-switch animation. Values are counted in approximate
 # game frames, not polling ticks.
