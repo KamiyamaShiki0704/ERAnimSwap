@@ -1,3 +1,7 @@
+# ERAnimSwap 0.2 supports official WW Elden Ring 2.6.2.0 and 2.7.0.0.
+# Runtime task registration is resolved dynamically; no version-specific RVA
+# needs to be configured here.
+#
 # Path auto-detection is enabled by default.
 # The DLL searches near its own folder and near the game folder for a chr directory
 # containing one of the mapped source files. Directory names such as GA/mod/etc.
@@ -52,6 +56,13 @@ detect_field = "wep_type"
 hand = "right"
 
 poll_every_frames = 6
+
+# Optional read-only Seamless Co-op ownership probe. It enumerates all loaded
+# PlayerIns instances and logs per-player detector results plus animation and
+# behavior resource pointers only when they change. It never writes pointers or
+# changes the existing local-player swap behavior.
+per_player_probe_enabled = false
+per_player_probe_every_frames = 300
 
 # Wait after DLL load before initializing game pointers and recurring tasks.
 # Set to 0.0 to disable.

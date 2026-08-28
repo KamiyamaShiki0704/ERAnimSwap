@@ -465,10 +465,12 @@ dependencies = [
 
 [[package]]
 name = "weapon-animation-hotreload"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "eldenring",
+ "from-singleton",
  "fromsoftware-shared",
+ "pelite",
  "serde",
  "toml",
  "windows",

@@ -1,6 +1,6 @@
 [package]
 name = "weapon-animation-hotreload"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 eldenring = { path = "../../fromsoftware-rs-0.14.0/crates/eldenring" }
 fromsoftware-shared = { path = "../../fromsoftware-rs-0.14.0/crates/shared", package = "fromsoftware-shared" }
+pelite = "0.10"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 windows = { version = "0.61", features = [
@@ -19,3 +20,6 @@ windows = { version = "0.61", features = [
 
 [lib]
 crate-type = ["cdylib"]
+
+[dev-dependencies]
+from-singleton = "3.0"

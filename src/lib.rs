@@ -9,12 +9,12 @@ use std::{
 
 use eldenring::{
     cs::{
-        CSTaskGroupIndex, CSTaskImp, ChrAsm, ChrAsmArmStyle, EquipParamWeapon, SoloParamRepository,
+        CSTaskGroupIndex, ChrAsm, ChrAsmArmStyle, EquipParamWeapon, PlayerIns, SoloParamRepository,
         WorldChrMan,
     },
     fd4::FD4TaskData,
 };
-use fromsoftware_shared::{FromStatic, SharedTaskImpExt};
+use fromsoftware_shared::FromStatic;
 use serde::Deserialize;
 use windows::Win32::{
     Foundation::HINSTANCE,
@@ -25,10 +25,15 @@ use windows::Win32::{
 };
 
 mod log;
+mod probe;
+mod runtime;
+
+use runtime::RuntimeApi;
 
 const DLL_PROCESS_ATTACH: u32 = 1;
 const DLL_PROCESS_DETACH: u32 = 0;
 const DEFAULT_RELOAD_NAME_LEN: u8 = 0x1F;
+const DEFAULT_CRASH_PATCH_AOB: &str = "80 65 ?? FD 48 C7 45 ?? 07 00 00 00 ?? 8D 45 48 4C 89 60 ?? 48 83 78 ?? 08 72 03 48 8B 00 66 44 89 20 49 8B 8F ?? ?? ?? ?? 48 8B 01 48 ?? ??";
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
@@ -50,6 +55,8 @@ struct Config {
     detectors: Vec<DetectorConfig>,
     startup_delay_seconds: f32,
     poll_every_frames: u32,
+    per_player_probe_enabled: bool,
+    per_player_probe_every_frames: u32,
     reload_delay_frames: u32,
     stable_frames_required: u32,
     copy_before_delay: bool,
@@ -144,6 +151,8 @@ impl Default for Config {
             detectors: Vec::new(),
             startup_delay_seconds: 3.0,
             poll_every_frames: 6,
+            per_player_probe_enabled: false,
+            per_player_probe_every_frames: 300,
             reload_delay_frames: 45,
             stable_frames_required: 8,
             copy_before_delay: false,
@@ -155,7 +164,7 @@ impl Default for Config {
             reload_timer_seconds: 10.0,
             reload_name_len: DEFAULT_RELOAD_NAME_LEN,
             crash_patch_enabled: true,
-            crash_patch_aob: "80 65 ?? FD 48 C7 45 ?? 07 00 00 00 ?? 8D 45 48 4C 89 60 ?? 48 83 78 ?? 08 72 03 48 8B 00 66 44 89 20 49 8B 8F ?? ?? ?? ?? 48 8B 01 48 ?? ??".to_string(),
+            crash_patch_aob: DEFAULT_CRASH_PATCH_AOB.to_string(),
             crash_patch_dist_from_end: 3,
             crash_patch_write_bytes: vec![0x48, 0x31, 0xD2],
             mappings: vec![
@@ -185,6 +194,7 @@ struct RuntimeState {
     pending_stable_frames: u32,
     pending_copied_key: Option<DetectionKey>,
     crash_patch_attempted: bool,
+    probe: probe::ProbeState,
 }
 
 #[derive(Clone, Copy)]
@@ -222,7 +232,7 @@ fn run_task_thread(module: usize) {
 
     let config = Config::load(module);
     log::line(format_args!(
-        "config enabled={} mappings={} detect_field={:?} hand={:?} active_detector={} startup_delay_seconds={} reload_delay_frames={} stable_frames_required={} copy_before_delay={}",
+        "config enabled={} mappings={} detect_field={:?} hand={:?} active_detector={} startup_delay_seconds={} reload_delay_frames={} stable_frames_required={} copy_before_delay={} per_player_probe_enabled={} per_player_probe_every_frames={}",
         config.enabled,
         config.mappings.len(),
         config.active_detect_field(),
@@ -231,7 +241,9 @@ fn run_task_thread(module: usize) {
         config.startup_delay_seconds,
         config.reload_delay_frames,
         config.stable_frames_required,
-        config.copy_before_delay
+        config.copy_before_delay,
+        config.per_player_probe_enabled,
+        config.per_player_probe_every_frames
     ));
 
     if !config.enabled {
@@ -246,10 +258,26 @@ fn run_task_thread(module: usize) {
         return;
     }
 
-    let Ok(cs_task) = CSTaskImp::wait_for_instance(Duration::MAX) else {
-        log::line(format_args!("failed to find CSTaskImp"));
-        STARTED.store(false, Ordering::Release);
-        return;
+    let runtime = match RuntimeApi::resolve_current() {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            log::line(format_args!("runtime compatibility check failed: {err}"));
+            STARTED.store(false, Ordering::Release);
+            return;
+        }
+    };
+    log::line(format_args!(
+        "runtime API resolved register_task=eldenring.exe+0x{:X}",
+        runtime.register_task_rva()
+    ));
+
+    let cs_task = match runtime::wait_for_cs_task(Duration::from_secs(60)) {
+        Ok(cs_task) => cs_task,
+        Err(err) => {
+            log::line(format_args!("runtime initialization failed: {err}"));
+            STARTED.store(false, Ordering::Release);
+            return;
+        }
     };
 
     let mapping_files = config
@@ -267,13 +295,17 @@ fn run_task_thread(module: usize) {
         paths.target_archive.display()
     ));
 
-    cs_task.run_recurring(
+    runtime.install_recurring_task(
+        cs_task,
+        CSTaskGroupIndex::FrameBegin,
         move |_: &FD4TaskData| {
             if SHUTDOWN.load(Ordering::Acquire) {
                 return;
             }
 
             state.frame = state.frame.wrapping_add(1);
+            probe::tick(&config, state.frame, &mut state.probe);
+
             if config.poll_every_frames > 1 && !state.frame.is_multiple_of(config.poll_every_frames)
             {
                 return;
@@ -286,8 +318,8 @@ fn run_task_thread(module: usize) {
                 &mut state,
             );
         },
-        CSTaskGroupIndex::FrameBegin,
     );
+    log::line(format_args!("recurring weapon detection task installed"));
 }
 
 fn tick(config: &Config, source_dir: &Path, target_archive: &Path, state: &mut RuntimeState) {
@@ -346,6 +378,15 @@ fn wait_startup_delay(config: &Config) {
 }
 
 fn find_matched_mapping(config: &Config) -> Option<MatchedMapping<'_>> {
+    let world_chr_man = unsafe { WorldChrMan::instance() }.ok()?;
+    let player = world_chr_man.main_player.as_deref()?;
+    find_matched_mapping_for_player(config, player)
+}
+
+fn find_matched_mapping_for_player<'a>(
+    config: &'a Config,
+    player: &PlayerIns,
+) -> Option<MatchedMapping<'a>> {
     let mut detection_cache = HashMap::<String, Option<i32>>::new();
 
     for mapping in &config.mappings {
@@ -356,7 +397,7 @@ fn find_matched_mapping(config: &Config) -> Option<MatchedMapping<'_>> {
         let detected_id = if let Some(cached) = detection_cache.get(&detector.name) {
             *cached
         } else {
-            let detected = detect_weapon_id_with_detector(&detector);
+            let detected = detect_weapon_id_with_detector(player, &detector);
             detection_cache.insert(detector.name.clone(), detected);
             detected
         };
@@ -467,9 +508,7 @@ fn clear_pending(state: &mut RuntimeState) {
     state.pending_copied_key = None;
 }
 
-fn detect_weapon_id_with_detector(detector: &DetectorSpec) -> Option<i32> {
-    let world_chr_man = unsafe { WorldChrMan::instance() }.ok()?;
-    let player = world_chr_man.main_player.as_deref()?;
+fn detect_weapon_id_with_detector(player: &PlayerIns, detector: &DetectorSpec) -> Option<i32> {
     let chr_asm = player.chr_asm.as_ref();
     let field = detector.detect_field;
     let hand = active_hand(detector.hand, chr_asm);
@@ -695,13 +734,13 @@ unsafe fn queue_chr_reload(
 }
 
 fn is_plausible_ptr(address: usize) -> bool {
-    address >= 0x10000 && address < 0x0000_8000_0000_0000 && address.is_multiple_of(8)
+    (0x10000..0x0000_8000_0000_0000).contains(&address) && address.is_multiple_of(8)
 }
 
 fn apply_crash_patch(config: &Config) -> Result<(), String> {
     let pattern = parse_aob(&config.crash_patch_aob)?;
     let (base, size) = main_module_range().ok_or("failed to locate main module")?;
-    let addr = scan_aob(base, size, &pattern).ok_or("crash patch AOB not found")?;
+    let addr = scan_unique_aob(base, size, &pattern)?;
     if config.crash_patch_dist_from_end > pattern.len() {
         return Err("crash_patch_dist_from_end is larger than AOB length".to_string());
     }
@@ -737,21 +776,39 @@ fn main_module_range() -> Option<(usize, usize)> {
     Some((base, size_of_image as usize))
 }
 
-fn scan_aob(base: usize, size: usize, pattern: &[Option<u8>]) -> Option<usize> {
-    if pattern.is_empty() || size < pattern.len() {
-        return None;
+fn aob_match_offsets(bytes: &[u8], pattern: &[Option<u8>]) -> Vec<usize> {
+    if pattern.is_empty() || bytes.len() < pattern.len() {
+        return Vec::new();
     }
 
-    let bytes = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
     bytes
         .windows(pattern.len())
-        .position(|window| {
+        .enumerate()
+        .filter_map(|(offset, window)| {
             window
                 .iter()
                 .zip(pattern)
                 .all(|(byte, expected)| expected.is_none_or(|expected| *byte == expected))
+                .then_some(offset)
         })
-        .map(|offset| base + offset)
+        .collect()
+}
+
+fn scan_unique_aob(base: usize, size: usize, pattern: &[Option<u8>]) -> Result<usize, String> {
+    if pattern.is_empty() || size < pattern.len() {
+        return Err("crash patch AOB is empty or larger than the module".to_string());
+    }
+
+    let bytes = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
+    let offsets = aob_match_offsets(bytes, pattern);
+    match offsets.as_slice() {
+        [offset] => Ok(base + offset),
+        [] => Err("crash patch AOB not found".to_string()),
+        _ => Err(format!(
+            "crash patch AOB is ambiguous: {} matches",
+            offsets.len()
+        )),
+    }
 }
 
 fn write_process_bytes(address: usize, bytes: &[u8]) -> Result<(), String> {

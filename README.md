@@ -2,6 +2,22 @@
 
 Rust DLL for Elden Ring animation archive swapping.
 
+## Game Compatibility
+
+Version `0.2.0` supports the official WW Elden Ring executables `2.6.2.0`
+(App Ver. 1.16.2) and `2.7.0.0` (App Ver. 1.17). Task registration is resolved
+from the running executable instead of using the old version-bound
+`fromsoftware-rs` address. If the required runtime entry is missing or
+ambiguous, the DLL logs the compatibility failure and stops before installing
+its recurring task.
+
+Run the offline executable probe with:
+
+```powershell
+.\Scripts\delivery\bug-er-animswap-er-2-7-compat\script\Test-ERAnimSwapCompatibility.ps1 `
+  -GameExe "F:\SteamLibrary\steamapps\common\ELDEN RING\Game\eldenring.exe"
+```
+
 The DLL polls the local player's active weapon, reads a configurable weapon param field such as `sp_atkcategory`, maps that ID to an animation archive variant in `chr/ExtraAnimation` or a detected `chr` folder, copies it over the active archive, then requests a DSAnimStudio-style character hot reload.
 
 ## Files
@@ -20,3 +36,33 @@ To avoid replaying the weapon-switch animation, mapped weapon changes are delaye
 You can keep multiple detection methods in one config by defining `[[detectors]]`. A mapping can set `detector = "name"` to choose which detector produces the ID for that mapping. Mappings without `detector` use `active_detector`, and the old top-level `detect_field`/`hand` still work when no detector profiles are defined.
 
 Use `startup_delay_seconds` to wait a few seconds after DLL load before initializing game pointers and recurring tasks.
+
+## Seamless Co-op Limitation
+
+The current file-replacement hot reload is global to the `c0000` character
+resource. It cannot give two player instances different replacement archives at
+the same time. The animation variants must remain separate load partitions;
+merging every configured variant can exceed the game's stable animation count
+and crash. True per-player support therefore requires a new instance-local
+animation-resource binding that keeps only partitions selected by players who
+are currently loaded.
+
+### Read-only ownership probe
+
+Version `0.2.0` includes an opt-in diagnostic probe for locating that binding:
+
+```toml
+per_player_probe_enabled = true
+per_player_probe_every_frames = 300
+```
+
+The probe enumerates every loaded `PlayerIns`, evaluates each player's mapping
+from that player's own equipment, and writes pointer topology to
+`weapon_animation_hotreload.log` when a player is added, changed, respawned, or
+removed. Relevant lines begin with `per-player probe`.
+
+The probe is read-only: it does not bind resources, write animation pointers,
+or change the existing local-player copy/reload behavior. Keep the normal
+`copy_enabled` and `hot_reload_enabled` settings unchanged only when you also
+want to exercise the existing local swap during the diagnostic session. Set
+both to `false` for a topology-only session.
