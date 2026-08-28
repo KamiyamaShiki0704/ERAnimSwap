@@ -6,8 +6,8 @@ license = "MIT"
 publish = false
 
 [dependencies]
-eldenring = { path = "../../fromsoftware-rs-0.14.0/crates/eldenring" }
-fromsoftware-shared = { path = "../../fromsoftware-rs-0.14.0/crates/shared", package = "fromsoftware-shared" }
+eldenring = { git = "https://github.com/vswarte/fromsoftware-rs.git", rev = "902851865d05069eda7dcfd6385c8881eadf29bf" }
+fromsoftware-shared = { git = "https://github.com/vswarte/fromsoftware-rs.git", rev = "902851865d05069eda7dcfd6385c8881eadf29bf", package = "fromsoftware-shared" }
 pelite = "0.10"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

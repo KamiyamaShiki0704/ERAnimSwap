@@ -29,6 +29,16 @@ Use `weapon_animation_hotreload.example.toml` as the starting config and rename/
 
 ## Build Note
 
+The project does not require a sibling FSRS checkout. Cargo fetches
+`eldenring` and `fromsoftware-shared` from the official
+[`vswarte/fromsoftware-rs`](https://github.com/vswarte/fromsoftware-rs)
+repository, with both packages pinned to commit
+`902851865d05069eda7dcfd6385c8881eadf29bf` from the `v0.14.0` release.
+
+```powershell
+cargo build --release
+```
+
 For supplemental player animation archives such as `c0000_dlc01.anibnd.dcx`, the DLL now requests both `c0000_dlc01` and the base player character name `c0000` by default. To control this manually, set `also_reload_base_character = false` or use `reload_names = ["c0000_dlc01", "c0000"]` in the TOML.
 
 To avoid replaying the weapon-switch animation, mapped weapon changes are delayed until the detected ID has remained stable for a short time. Tune `reload_delay_frames`, `stable_frames_required`, and `copy_before_delay` in the TOML if the reload feels too early or too late.
