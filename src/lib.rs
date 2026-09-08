@@ -628,10 +628,9 @@ fn replace_archive(source_path: &Path, target_archive: &Path) -> std::io::Result
 
 fn request_hot_reload(config: &Config, state: &mut RuntimeState) {
     if config.crash_patch_enabled && !state.crash_patch_attempted {
-        state.crash_patch_attempted = true;
-        match apply_crash_patch(config) {
-            Ok(()) => log::line(format_args!("crash patch applied or already compatible")),
-            Err(err) => log::line(format_args!("crash patch failed: {err}")),
+        let result = apply_crash_patch(config);
+        if !record_crash_patch_result(state, result) {
+            return;
         }
     }
 
@@ -661,6 +660,22 @@ fn request_hot_reload(config: &Config, state: &mut RuntimeState) {
         }
 
         log::line(format_args!("requested character reload '{name}'"));
+    }
+}
+
+fn record_crash_patch_result(state: &mut RuntimeState, result: Result<(), String>) -> bool {
+    match result {
+        Ok(()) => {
+            state.crash_patch_attempted = true;
+            log::line(format_args!("crash patch applied"));
+            true
+        }
+        Err(err) => {
+            log::line(format_args!(
+                "hot reload blocked: crash patch failed: {err}"
+            ));
+            false
+        }
     }
 }
 
@@ -1294,6 +1309,18 @@ fn target_archive_from_chr_dir(chr_dir: &Path, configured_target: &Path) -> Path
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_crash_patch_blocks_reload_and_does_not_cache_success() {
+        let mut state = RuntimeState::default();
+        assert!(!record_crash_patch_result(
+            &mut state,
+            Err("missing signature".into())
+        ));
+        assert!(!state.crash_patch_attempted);
+        assert!(record_crash_patch_result(&mut state, Ok(())));
+        assert!(state.crash_patch_attempted);
+    }
 
     #[test]
     fn parses_aob_wildcards() {

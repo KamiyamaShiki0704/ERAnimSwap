@@ -121,6 +121,14 @@ mod tests {
             .unwrap_or_else(|err| panic!("failed to parse {}: {err:?}", path.display()));
         let register_task_rva = resolve_register_task_rva(pe)
             .unwrap_or_else(|err| panic!("register_task compatibility check failed: {err}"));
+        if let Ok(expected) = std::env::var("ER_EXPECT_REGISTER_TASK_RVA") {
+            let expected = u32::from_str_radix(expected.trim_start_matches("0x"), 16)
+                .expect("ER_EXPECT_REGISTER_TASK_RVA must be hexadecimal");
+            assert_eq!(
+                register_task_rva, expected,
+                "task target changed from the reviewed RVA"
+            );
+        }
 
         let text = pe
             .section_headers()
@@ -177,5 +185,22 @@ mod tests {
         let pe = PeFile::from_bytes(&bytes).expect("mutated fixture should remain a valid PE");
         let error = resolve_register_task_rva(pe).expect_err("missing pattern must be rejected");
         assert!(error.contains("missing or ambiguous"));
+    }
+
+    #[test]
+    fn compatibility_duplicate_task_pattern_is_rejected() {
+        let Some(path) = configured_game_executable() else {
+            return;
+        };
+        let mut bytes = fs::read(path).expect("read executable fixture");
+        let pattern = crate::parse_aob(REGISTER_TASK_RAW_AOB).unwrap();
+        let matches = crate::aob_match_offsets(&bytes, &pattern);
+        assert_eq!(matches.len(), 1);
+        let start = matches[0];
+        let copy = bytes[start..start + pattern.len()].to_vec();
+        let destination = start + 128;
+        bytes[destination..destination + copy.len()].copy_from_slice(&copy);
+        let pe = PeFile::from_bytes(&bytes).unwrap();
+        assert!(resolve_register_task_rva(pe).is_err());
     }
 }

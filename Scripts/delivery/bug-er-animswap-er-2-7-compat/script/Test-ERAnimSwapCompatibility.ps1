@@ -1,7 +1,7 @@
 # Topic: BUG-ERAnimSwap-ER-2-7-compat
 # Topic-Path: Topics/Gameplay/bug-er-animswap-er-2-7-compat
 # Spec: spec.md@1.0
-# Script-Version: 1.0
+# Script-Version: 1.1
 # Verifies: SPEC-ERAS-270-001, SPEC-ERAS-270-004
 # Project-Relative-Path: Scripts/delivery/bug-er-animswap-er-2-7-compat/script/Test-ERAnimSwapCompatibility.ps1
 
@@ -34,11 +34,18 @@ Write-Host "File version: $version"
 Write-Host "SHA-256: $hash"
 
 $previousGameExe = $env:ER_GAME_EXE
+$previousExpectedTask = $env:ER_EXPECT_REGISTER_TASK_RVA
 try {
     $env:ER_GAME_EXE = $gamePath
+    $env:ER_EXPECT_REGISTER_TASK_RVA = switch ($version) {
+        '2.6.2.0' { '0xEB1FE0' }
+        '2.7.0.0' { '0xEB3DE0' }
+        '2.7.1.0' { '0xEB3E50' }
+        default { throw "Executable $version has no reviewed task target. Audit it before claiming compatibility." }
+    }
     Push-Location $projectRoot
     try {
-        & cargo test runtime::tests::compatibility_ -- --nocapture
+        & cargo test --locked runtime::tests::compatibility_ -- --nocapture
         if ($LASTEXITCODE -ne 0) {
             throw "Runtime symbol compatibility test failed with exit code $LASTEXITCODE."
         }
@@ -49,6 +56,7 @@ try {
 }
 finally {
     $env:ER_GAME_EXE = $previousGameExe
+    $env:ER_EXPECT_REGISTER_TASK_RVA = $previousExpectedTask
 }
 
-Write-Host "ERAnimSwap static compatibility probe passed."
+Write-Host "ERAnimSwap static signature checks passed. Object layout and visible reload still require in-game validation."

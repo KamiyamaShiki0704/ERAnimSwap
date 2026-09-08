@@ -4,12 +4,20 @@ Rust DLL for Elden Ring animation archive swapping.
 
 ## Game Compatibility
 
-Version `0.2.0` supports the official WW Elden Ring executables `2.6.2.0`
-(App Ver. 1.16.2) and `2.7.0.0` (App Ver. 1.17). Task registration is resolved
+Version `0.2.1` passes offline signature checks on official WW Elden Ring
+executables `2.6.2.0` (App Ver. 1.16.2) and `2.7.1.0` (App Ver. 1.17.1),
+retaining the previous `2.7.0.0` (App Ver. 1.17) resolution strategy.
+New-version object layouts and visible hot reload still require in-game
+acceptance; see [the 1.17.1 evidence report](docs/compatibility-1.17.1.md).
+Task registration is resolved
 from the running executable instead of using the old version-bound
 `fromsoftware-rs` address. If the required runtime entry is missing or
 ambiguous, the DLL logs the compatibility failure and stops before installing
 its recurring task.
+
+Version `0.2.1` also blocks a hot reload request when the enabled crash patch
+fails, instead of continuing without that protection. This does not undo an
+archive copy already completed before the reload request.
 
 Run the offline executable probe with:
 
