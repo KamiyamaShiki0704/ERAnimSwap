@@ -1,4 +1,6 @@
 /target/
+__pycache__/
+*.pyc
 
 # Local runtime config and logs.
 weapon_animation_hotreload.toml

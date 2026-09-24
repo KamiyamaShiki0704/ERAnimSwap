@@ -1,6 +1,6 @@
 [package]
 name = "weapon-animation-hotreload"
-version = "0.2.1"
+version = "0.3.0-experimental.2"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -13,13 +13,17 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_System_Diagnostics_Debug",
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
+    "Win32_System_Threading",
 ] }
 
 [lib]
+path = "src/capacity/lib.rs"
 crate-type = ["cdylib"]
 
 [dev-dependencies]
 from-singleton = "3.0"
+sha2 = "0.10"
