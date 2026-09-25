@@ -1,4 +1,4 @@
-# ERAnimSwap
+# ERCapacityExpansion
 
 An Elden Ring DLL that increases temporary memory available to loading workers,
 allowing larger animation archives to load without running out of that space.
