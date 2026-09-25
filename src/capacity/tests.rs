@@ -20,6 +20,9 @@ fn fixture() -> Vec<u8> {
     for &(rva, expected) in GUARDS {
         image[rva..rva + expected.len()].copy_from_slice(expected);
     }
+    for edit in EDITS {
+        image[edit.rva..edit.rva + edit.original.len()].copy_from_slice(edit.original);
+    }
     image
 }
 
@@ -70,9 +73,96 @@ fn larger_and_already_modified_budgets_are_never_lowered() {
     }
 }
 
-struct CodePage(*mut u8);
+#[test]
+fn clip_guards_mixed_patches_and_late_world_refuse_before_writes() {
+    let mut image = fixture();
+    for edit in EDITS {
+        for i in 0..edit.original.len() {
+            image[edit.rva + i] ^= 1;
+            assert!(check(&image).is_err());
+            image[edit.rva + i] ^= 1;
+        }
+        image[edit.rva..edit.rva + edit.replacement.len()].copy_from_slice(edit.replacement);
+        assert!(check(&image).is_err());
+        image[edit.rva..edit.rva + edit.original.len()].copy_from_slice(edit.original);
+    }
+    image[WORLD_RVA] = 1;
+    assert!(
+        check(&image)
+            .unwrap_err()
+            .contains("startup loading required")
+    );
+}
+
+#[test]
+fn transaction_api_failures_restore_all_windows_and_page_protections() {
+    let pointer =
+        unsafe { VirtualAlloc(None, IMAGE_LENGTH, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) }
+            .cast::<u8>();
+    assert!(!pointer.is_null());
+    let page = CodePage(pointer);
+    let base = pointer as usize;
+    for edit in EDITS {
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                edit.original.as_ptr(),
+                pointer.add(edit.rva),
+                edit.original.len(),
+            )
+        };
+    }
+    let mut old = PAGE_PROTECTION_FLAGS::default();
+    unsafe { VirtualProtect(pointer.cast(), IMAGE_LENGTH, PAGE_EXECUTE_READ, &mut old) }.unwrap();
+    // Four unique pages, flush, then four restores. Name edits share one page.
+    for failure in 0..9 {
+        let mut call = 0;
+        let result = unsafe {
+            write_edits(base, || {
+                let allow = call != failure;
+                call += 1;
+                allow
+            })
+        };
+        assert!(
+            result.is_err(),
+            "injected operation {failure} was not exercised"
+        );
+        for edit in EDITS {
+            let actual =
+                unsafe { std::slice::from_raw_parts(pointer.add(edit.rva), edit.original.len()) };
+            assert_eq!(actual, edit.original, "rollback operation {failure}");
+            let mut info = MEMORY_BASIC_INFORMATION::default();
+            unsafe {
+                VirtualQuery(
+                    Some(pointer.add(edit.rva).cast()),
+                    &mut info,
+                    size_of::<MEMORY_BASIC_INFORMATION>(),
+                )
+            };
+            assert_eq!(info.Protect, PAGE_EXECUTE_READ);
+        }
+    }
+    assert_eq!(unsafe { write_edits(base, || true) }, Ok(()));
+    for edit in EDITS {
+        let actual =
+            unsafe { std::slice::from_raw_parts(pointer.add(edit.rva), edit.replacement.len()) };
+        assert_eq!(actual, edit.replacement);
+    }
+    assert!(unsafe { write_edits(base, || true) }.is_err());
+    for edit in EDITS {
+        let actual =
+            unsafe { std::slice::from_raw_parts(pointer.add(edit.rva), edit.replacement.len()) };
+        assert_eq!(
+            actual, edit.replacement,
+            "a repeated call must not undo prior patches"
+        );
+    }
+    drop(page);
+}
+
+pub(super) struct CodePage(pub(super) *mut u8);
 impl CodePage {
-    fn new(code: &[u8]) -> Self {
+    pub(super) fn new(code: &[u8]) -> Self {
         let pointer = unsafe { VirtualAlloc(None, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) }
             .cast::<u8>();
         assert!(!pointer.is_null());
@@ -210,7 +300,40 @@ fn full_patch_on_private_image_mapping_preserves_disk_executable() {
     });
     assert!(!mapping.1.Value.is_null());
     let base = mapping.1.Value as usize;
+    let original_text = unsafe { image_bytes(base, TEXT_RVA, TEXT_LENGTH) }
+        .unwrap()
+        .to_vec();
     assert_eq!(unsafe { apply(base) }, Ok(()));
+    for edit in EDITS {
+        assert_eq!(
+            unsafe { image_bytes(base, edit.rva, edit.replacement.len()) }.unwrap(),
+            edit.replacement
+        );
+    }
+    let modified_text = unsafe { image_bytes(base, TEXT_RVA, TEXT_LENGTH) }.unwrap();
+    let actual_changes: Vec<_> = original_text
+        .iter()
+        .zip(modified_text)
+        .enumerate()
+        .filter(|(_, (before, after))| before != after)
+        .map(|(offset, _)| offset + TEXT_RVA)
+        .collect();
+    let mut expected_changes: Vec<_> = EDITS
+        .iter()
+        .flat_map(|edit| {
+            edit.original
+                .iter()
+                .zip(edit.replacement)
+                .enumerate()
+                .filter(|(_, (before, after))| before != after)
+                .map(move |(offset, _)| offset + edit.rva)
+        })
+        .collect();
+    expected_changes.sort_unstable();
+    assert_eq!(
+        actual_changes, expected_changes,
+        "no unrelated executable bytes may change"
+    );
     let after = unsafe { image_bytes(base, WINDOW_RVA, WINDOW.len()) }.unwrap();
     let differences: Vec<_> = after
         .iter()

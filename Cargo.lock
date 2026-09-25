@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "weapon-animation-hotreload"
-version = "0.3.0-experimental.2"
+version = "0.3.0-experimental.3"
 dependencies = [
  "eldenring",
  "from-singleton",

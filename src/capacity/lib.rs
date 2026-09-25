@@ -1,3 +1,8 @@
+#![allow(
+    non_snake_case,
+    reason = "Keep the public DLL filename CapacityExpansion.dll."
+)]
+
 use std::ffi::c_void;
 
 use windows::{
@@ -43,7 +48,7 @@ fn process_attach(module: HINSTANCE) -> i32 {
         return 0;
     }
 
-    // Do not defer the budget write to the logger: workers may be created as
+    // Do not defer installation to the logger: workers may be created as
     // soon as the loader returns. This path does no file I/O or allocation.
     let result = apply_to_host();
     let module = module.0 as usize;
@@ -57,13 +62,13 @@ fn process_attach(module: HINSTANCE) -> i32 {
             ));
             match result {
                 Ok(()) => log::line(format_args!(
-                    "CAPACITY_PATCH_APPLIED rva=0x{:X} EzWork temporary budget={} -> {} bytes; future workers only",
+                    "CAPACITY_PATCH_APPLIED rva=0x{:X} EzWork temporary budget={} -> {} bytes; CLIP_INDEX_PATCH_APPLIED valid indices=0..65533; -1/-2 reserved",
                     patch::PATCH_RVA, patch::OLD_BUDGET, patch::NEW_BUDGET
                 )),
                 Err(error) => log::line(format_args!("CAPACITY_PATCH_REFUSED: {error}")),
             }
             log::line(format_args!(
-                "Startup loading and full restart required. No existing arena resized. Runtime loading/playback not yet verified. Not a TAE limit patch."
+                "Startup loading and full restart required. Legacy swap/reload disabled. Clip-index expansion is bounded to 65534 combined slots, not unlimited TAE/event capacity."
             ));
         });
     1

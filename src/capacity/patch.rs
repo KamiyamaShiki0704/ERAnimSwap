@@ -1,8 +1,6 @@
-use std::{
-    ffi::c_void,
-    mem::size_of,
-    sync::atomic::{AtomicU8, Ordering},
-};
+#[cfg(test)]
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::{ffi::c_void, mem::size_of};
 
 use windows::Win32::System::{
     Diagnostics::Debug::FlushInstructionCache,
@@ -14,18 +12,70 @@ use windows::Win32::System::{
 };
 
 pub const OLD_BUDGET: u32 = 128 * 1024;
+#[path = "clip_index.rs"]
+mod clip_index;
 pub const NEW_BUDGET: u32 = 1024 * 1024;
 pub const PATCH_RVA: usize = 0xE83E1F;
 const WINDOW_RVA: usize = 0xE83E13;
 const TEXT_RVA: usize = 0x1000;
 const TEXT_LENGTH: usize = 0x29A4800;
 const IMAGE_LENGTH: usize = 0x5E0DA00;
+const WORLD_RVA: usize = 0x3D69FF8;
+const EDITS: [clip_index::Edit; 5] = [
+    clip_index::Edit {
+        rva: PATCH_RVA,
+        original: &[2],
+        replacement: &[0x10],
+    },
+    clip_index::EDITS[0],
+    clip_index::EDITS[1],
+    clip_index::EDITS[2],
+    clip_index::EDITS[3],
+];
 const WINDOW: &[u8] = &[
     0x44, 0x89, 0x6c, 0x24, 0x30, 0x48, 0xc7, 0x44, 0x24, 0x28, 0, 0, 2, 0, 0x48, 0x89, 0x44, 0x24,
     0x20, 0x44, 0x8b, 0x4d, 0x9b, 0x41, 0xb8, 0, 0, 1, 0, 0x48, 0x8b, 0xd6, 0x49, 0x8b, 0xcc, 0xe8,
     0x25, 0x49, 0x05, 0x01,
 ];
 const GUARDS: &[(usize, &[u8])] = &[
+    (0x1461836, clip_index::TEARDOWN),
+    (0x1462320, &[0x66, 0x89, 0x91, 0xc6, 0, 0, 0, 0xc3]),
+    (0x1461a90, &[0x0f, 0xb7, 0x81, 0xc6, 0, 0, 0, 0xc3]),
+    (
+        0x1461836,
+        &[
+            0x0f, 0xb7, 0x83, 0xc6, 0, 0, 0, 0x66, 0x83, 0xf8, 0xfe, 0x75, 0x1a,
+        ],
+    ),
+    (
+        0x1461851,
+        &[
+            0x83, 0xc8, 0xff, 0x66, 0x89, 0x83, 0xc6, 0, 0, 0, 0xeb, 0x1e, 0x66, 0x83, 0xf8, 0xff,
+            0x74, 0x18,
+        ],
+    ),
+    (0x1460921, &[0x49, 0x8b, 6, 0x48, 0x8b, 0x88, 0xa8, 0, 0, 0]),
+    (0x1460945, &[0xe8, 0x96, 0xd6, 0xfb, 0xff]),
+    (
+        0x1460a2c,
+        &[
+            0xb8, 0xfe, 0xff, 0xff, 0xff, 0x48, 0x8d, 0x4c, 0x24, 0x50, 0x4c, 0x8b, 0xc7, 0x66,
+            0x89, 0x87, 0xc6, 0, 0, 0,
+        ],
+    ),
+    (0x151527e, &[0x75, 0x45, 0xe8, 0x5b, 0xd7, 0x16, 0]),
+    (
+        0x15351db,
+        &[
+            0x48, 0x63, 0xc8, 0x48, 0x8d, 0x55, 0x7f, 0x48, 0x89, 0x4d, 0x7f,
+        ],
+    ),
+    (
+        0x15350ae,
+        &[
+            0x0f, 0xb6, 0x41, 0x53, 0x83, 0xf8, 4, 0x0f, 0x84, 5, 1, 0, 0,
+        ],
+    ),
     (WINDOW_RVA, WINDOW),
     (
         0x1ED87AB,
@@ -112,6 +162,19 @@ fn validate<'a>(read: impl Fn(usize, usize) -> Option<&'a [u8]>) -> Result<(), &
             return Err("instruction guard mismatch or conflicting patch; no writes");
         }
     }
+    for edit in EDITS {
+        if edit.original.len() != edit.replacement.len()
+            || edit.rva / 4096 != (edit.rva + edit.original.len() - 1) / 4096
+            || read(edit.rva, edit.original.len()) != Some(edit.original)
+        {
+            return Err("clip-index instruction guard mismatch or conflicting patch; no writes");
+        }
+    }
+    if read(WORLD_RVA, 8) != Some(&[0u8; 8]) {
+        return Err(
+            "game world already initialized or unreadable; startup loading required; no writes",
+        );
+    }
     let text = read(TEXT_RVA, TEXT_LENGTH).ok_or("unreadable executable section")?;
     let mut matches = text
         .windows(WINDOW.len())
@@ -162,9 +225,120 @@ unsafe fn image_bytes<'a>(base: usize, rva: usize, length: usize) -> Option<&'a 
 
 pub unsafe fn apply(base: usize) -> Result<(), &'static str> {
     validate(|rva, length| unsafe { image_bytes(base, rva, length) })?;
-    unsafe { write_budget_byte((base + PATCH_RVA) as *mut u8) }
+    unsafe { write_edits(base, || true) }
 }
 
+// Startup-only: callers must ensure no thread can execute these windows yet.
+// The callback permits deterministic API failure tests without game injection.
+unsafe fn write_edits(
+    base: usize,
+    mut before_api: impl FnMut() -> bool,
+) -> Result<(), &'static str> {
+    let mut pages = [0usize; 5];
+    let mut protections = [PAGE_PROTECTION_FLAGS::default(); 5];
+    let mut count = 0;
+    for edit in EDITS {
+        let page = (base + edit.rva) & !4095;
+        if !pages[..count].contains(&page) {
+            pages[count] = page;
+            count += 1;
+        }
+    }
+    let protect = |page: usize, flags, old: &mut PAGE_PROTECTION_FLAGS| unsafe {
+        VirtualProtect(page as *const c_void, 4096, flags, old).is_ok()
+    };
+    let flush = || unsafe {
+        FlushInstructionCache(
+            GetCurrentProcess(),
+            Some(base as *const c_void),
+            IMAGE_LENGTH,
+        )
+        .is_ok()
+    };
+    for i in 0..count {
+        if !before_api() || !protect(pages[i], PAGE_EXECUTE_READWRITE, &mut protections[i]) {
+            for j in 0..i {
+                let _ = protect(
+                    pages[j],
+                    protections[j],
+                    &mut PAGE_PROTECTION_FLAGS::default(),
+                );
+            }
+            return Err(
+                "page preparation failed; no instruction writes; protection recovery attempted",
+            );
+        }
+    }
+    let originals_match = EDITS.iter().all(|edit| unsafe {
+        std::slice::from_raw_parts((base + edit.rva) as *const u8, edit.original.len())
+            == edit.original
+    });
+    if originals_match {
+        for edit in EDITS {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    edit.replacement.as_ptr(),
+                    (base + edit.rva) as *mut u8,
+                    edit.replacement.len(),
+                )
+            };
+        }
+    }
+    let mut success = originals_match && before_api() && flush();
+    for i in 0..count {
+        if !before_api()
+            || !protect(
+                pages[i],
+                protections[i],
+                &mut PAGE_PROTECTION_FLAGS::default(),
+            )
+        {
+            success = false;
+        }
+    }
+    if success {
+        return Ok(());
+    }
+    // Some pages may already be RX. Reopen before rollback, never store to a
+    // page whose protection could not be acquired, and do not undo foreign bytes.
+    let mut writable = [false; 5];
+    for i in 0..count {
+        writable[i] = protect(
+            pages[i],
+            PAGE_EXECUTE_READWRITE,
+            &mut PAGE_PROTECTION_FLAGS::default(),
+        );
+    }
+    if originals_match {
+        for edit in EDITS {
+            let page = (base + edit.rva) & !4095;
+            let index = pages[..count].iter().position(|p| *p == page).unwrap();
+            let current = unsafe {
+                std::slice::from_raw_parts((base + edit.rva) as *const u8, edit.replacement.len())
+            };
+            if writable[index] && current == edit.replacement {
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        edit.original.as_ptr(),
+                        (base + edit.rva) as *mut u8,
+                        edit.original.len(),
+                    )
+                };
+            }
+        }
+    }
+    let _ = flush();
+    for i in 0..count {
+        let _ = protect(
+            pages[i],
+            protections[i],
+            &mut PAGE_PROTECTION_FLAGS::default(),
+        );
+    }
+    Err("patch transaction failed or bytes changed concurrently; rollback attempted; restart game")
+}
+
+#[cfg(test)]
 unsafe fn write_budget_byte(address: *mut u8) -> Result<(), &'static str> {
     let mut original_protection = PAGE_PROTECTION_FLAGS::default();
     unsafe {

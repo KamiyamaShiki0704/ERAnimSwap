@@ -1,6 +1,6 @@
 [package]
 name = "weapon-animation-hotreload"
-version = "0.3.0-experimental.2"
+version = "0.3.0-experimental.3"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -21,6 +21,7 @@ windows = { version = "0.61", features = [
 ] }
 
 [lib]
+name = "CapacityExpansion"
 path = "src/capacity/lib.rs"
 crate-type = ["cdylib"]
 
